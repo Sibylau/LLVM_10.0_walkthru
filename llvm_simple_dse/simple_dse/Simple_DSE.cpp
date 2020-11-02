@@ -35,13 +35,14 @@ namespace {
 
                 // If this dead instruction is the only one that uses 
                 // this op/instr
-                Instruction *opI = dyn_cast<Instruction>(opV);
-                if (&I == opV || !opV->use_empty()) continue;
-                if (opI->use_empty() && !opI->isTerminator() && 
-                !isa<DbgInfoIntrinsic>(*opI) && !isa<LandingPadInst>(*opI)
-                && !opI->mayHaveSideEffects()) {
-                  opI->print(llvm::errs());
-                  worklist.push_back(opI);
+                if(Instruction *opI = dyn_cast<Instruction>(opV)) {
+                  if (&I == opV || !opV->use_empty()) continue;
+                  if (opI->use_empty() && !opI->isTerminator() && 
+                  !isa<DbgInfoIntrinsic>(*opI) && !isa<LandingPadInst>(*opI)
+                  && !opI->mayHaveSideEffects()) {
+                    opI->print(llvm::errs());
+                    worklist.push_back(opI);
+                  }
                 }
               }
             }
@@ -64,10 +65,19 @@ char MyPass::ID = 0;
 
 // Automatically enable the pass.
 // http://adriansampson.net/blog/clangpass.html
-static void registerMyPass(const PassManagerBuilder &,
-                         legacy::PassManagerBase &PM) {
-  PM.add(new MyPass());
-}
-static RegisterStandardPasses
-  RegisterMyPass(PassManagerBuilder::EP_EarlyAsPossible,
-                 registerMyPass);
+// static void registerMyPass(const PassManagerBuilder &,
+//                          legacy::PassManagerBase &PM) {
+//   PM.add(new MyPass());
+// }
+// static RegisterStandardPasses
+//   RegisterMyPass(PassManagerBuilder::EP_EarlyAsPossible,
+//                  registerMyPass);
+
+static RegisterPass<MyPass> X("simpledce", "Simple DCE Pass",
+                             false /* Only looks at CFG */,
+                             true /* Analysis Pass */);
+
+static RegisterStandardPasses Y(
+    PassManagerBuilder::EP_EarlyAsPossible,
+    [](const PassManagerBuilder &Builder,
+       legacy::PassManagerBase &PM) { PM.add(new MyPass()); });
