@@ -1,6 +1,6 @@
 # Loop Induction Variable Elimination
 
-An LLVM pass doing loop induction variable elimination. 
+An LLVM pass doing loop induction variable elimination. Currently under debugging...
 
 ## Loop Induction Variable Elimination
 Loop induction variable elimination removes basic induciton variable whose only uses are in loop test conditions.  
