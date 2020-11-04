@@ -12,22 +12,22 @@ entry:
   br label %for.cond
 
 for.cond:                                         ; preds = %for.inc, %entry
-  %indvars.iv = phi i64 [ %indvars.iv.next, %for.inc ], [ 0, %entry ]
-  %exitcond = icmp ne i64 %indvars.iv, 4
-  br i1 %exitcond, label %for.body, label %for.end
+  %1 = phi i32 [ -1, %entry ], [ %3, %for.inc ]
+  %cmp = icmp slt i32 %1, 7
+  br i1 %cmp, label %for.body, label %for.end
 
 for.body:                                         ; preds = %for.cond
-  %1 = mul nuw nsw i64 2, %indvars.iv
-  %2 = sub nsw i64 %1, 1
-  %arrayidx = getelementptr inbounds [8 x i32], [8 x i32]* %a, i64 0, i64 %2
-  %3 = load i32, i32* %arrayidx, align 4
-  %add = add nsw i32 %3, 2
-  %arrayidx2 = getelementptr inbounds [8 x i32], [8 x i32]* %a, i64 0, i64 %2
+  %idxprom = sext i32 %1 to i64
+  %arrayidx = getelementptr inbounds [8 x i32], [8 x i32]* %a, i64 0, i64 %idxprom
+  %2 = load i32, i32* %arrayidx, align 4
+  %add = add nsw i32 %2, 2
+  %idxprom1 = sext i32 %1 to i64
+  %arrayidx2 = getelementptr inbounds [8 x i32], [8 x i32]* %a, i64 0, i64 %idxprom1
   store i32 %add, i32* %arrayidx2, align 4
   br label %for.inc
 
 for.inc:                                          ; preds = %for.body
-  %indvars.iv.next = add nuw nsw i64 %indvars.iv, 1
+  %3 = add i32 %1, 2
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond

@@ -9,6 +9,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/LoopUtils.h"
 #include "llvm/Transforms/Utils/FunctionComparator.h"
@@ -47,8 +48,10 @@ namespace {
     bool runOnLoop(Loop *L, LPPassManager &LPM) override {
       if (skipLoop(L))
         return false;
-      
+
+      static LLVMContext TheContext;
       Function &F = *L->getHeader()->getParent();
+      LLVMContext &Ctx = F.getContext();
       
       LoopInfo *LI = &getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
       const auto *TTI = &getAnalysis<TargetTransformInfoWrapperPass>().getTTI(F);
@@ -61,72 +64,59 @@ namespace {
         consider simplify first.\n");
 
       // tuple<Instruction/derived_iv, mul_const, shift_const>
-      std::map<Instruction*, std::tuple<Instruction*, int, int>> workmap;
+      std::map<Value*, std::tuple<Instruction*, int, int>> workmap;
+      std::map<Value*, std::tuple<Instruction*, int, int>> phimap;
 
       // in canonical form, ind var is guaranteed to be the first phi node
       BasicBlock *L_header = L->getHeader();
-      Instruction *indvar;
+      PHINode *indvar;
       std::tuple<Instruction*, int, int> indvar_tuple;
       for (PHINode &pn : L_header->phis()) {
-        indvar = dyn_cast<Instruction>(&pn);
+        indvar = &pn;
+        // indvar->print(llvm::errs());
         break;
       }
-      std::get<0>(indvar_tuple) = indvar;
+      assert(indvar);
+      Instruction *indvar_instr = dyn_cast<Instruction>(indvar);
+      std::get<0>(indvar_tuple) = indvar_instr;
       std::get<1>(indvar_tuple) = 1; // assume the base ind var has the form i += e
       std::get<2>(indvar_tuple) = 0;
-      workmap.insert({indvar, indvar_tuple});
+      workmap[indvar_instr] = indvar_tuple;
+      // llvm::errs() << "\n tuple (" << std::get<0>(indvar_tuple) << ", " << std::get<1>(indvar_tuple)
+      //   << ", " << std::get<2>(indvar_tuple) << ") \n";
 
+      // get the basic ind var, the increment instruction and shifting amount
       int base_shift;
       Instruction *base_shift_inst;
-      Value *base_init_inst;
-      for(unsigned i = 0; i < dyn_cast<PHINode>(indvar)->getNumIncomingValues(); i++) {
-        BasicBlock *income_b = dyn_cast<PHINode>(indvar)->getIncomingBlock(i);
-        if (L->contains(income_b)) {
-          Value *income_v = dyn_cast<PHINode>(indvar)->getIncomingValue(i);
-          if (auto *op = dyn_cast<BinaryOperator>(income_v)) {
-            base_shift_inst = dyn_cast<Instruction>(income_v);
-            Value *lhs = op->getOperand(0);
-            Value *rhs = op->getOperand(1);
-            if (dyn_cast<Instruction>(lhs) == indvar) {
-              int base_shift = dyn_cast<ConstantInt>(rhs)->getSExtValue();
-              // std::get<2>(indvar_tuple) = base_shift;
-            }
-            else if (dyn_cast<Instruction>(rhs) == indvar) {
-              int base_shift = dyn_cast<ConstantInt>(lhs)->getSExtValue();
-              // std::get<2>(indvar_tuple) = base_shift;
+      Value *base_init_val;
+      // assert(indvar->getNumIncomingValues() == 2);
+      if (indvar->getNumIncomingValues() == 2) {
+        for(unsigned i = 0, e = indvar->getNumIncomingValues(); i != e; ++i) {
+          BasicBlock *income_b = indvar->getIncomingBlock(i);
+          Value *income_v = indvar->getIncomingValue(i);
+          if (income_b != L->getLoopPreheader()) {
+            if (auto *op = dyn_cast<BinaryOperator>(income_v)) {
+              base_shift_inst = dyn_cast<Instruction>(income_v);
+              // base_shift_inst->print(llvm::errs());
+              Value *lhs = op->getOperand(0);
+              Value *rhs = op->getOperand(1);
+              if (dyn_cast<Instruction>(lhs) == indvar_instr) {
+                base_shift = dyn_cast<ConstantInt>(rhs)->getSExtValue();
+              }
+              else if (dyn_cast<Instruction>(rhs) == indvar_instr) {
+                base_shift = dyn_cast<ConstantInt>(lhs)->getSExtValue();
+              }
             }
           }
-        }
-        else {
-          base_init_inst = dyn_cast<PHINode>(indvar)->getIncomingValue(i);
+          else {
+            base_init_val = indvar->getIncomingValue(i);
+          }
         }
       }
-      
-      
-      // for (auto &I: *L_header) {
-      //   if (auto *op = dyn_cast<BinaryOperator>(&I)) {
-      //     Value *lhs = I.getOperand(0);
-      //     Value *rhs = I.getOperand(1);
-      //     if (I.getOpcode() == Instruction::Mul) {
-      //       if (dyn_cast<Instruction>(lhs) == indvar) {
-      //         int mul_const = dyn_cast<ConstantInt>(rhs)->getSExtValue();
-      //         std::get<1>(base_indvar) = mul_const;
-      //       }
-      //       else if (dyn_cast<Instruction>(rhs) == indvar) {
-      //         int mul_const = dyn_cast<ConstantInt>(lhs)->getSExtValue();
-      //         std::get<1>(base_indvar) = mul_const;
-      //       }
-      //       else
-      //         continue;
-      //     }
-      //     else if (I.getOpcode() == Instruction::Add) {
-
-      //     }
-      //     else if (I.getOpcode() == Instruction::Sub) {
-
-      //     }
-      //   }
-      // }
+      else
+        LLVM_DEBUG(dbgs() << "The Basic Induction Variable has abnormal PHINode.\n");
+     
+      // llvm::errs() << "\nshift = " << base_shift <<"\n";
       // Instruction *BrInst = L_header->getTerminator();
       // // get the loop exit condition instruction
       // Instruction *Cmp, *IV;
@@ -148,120 +138,243 @@ namespace {
           continue;
 
         for (auto &I: *B) {
-          // I.print(llvm::errs());
-          // llvm::errs() << "\n";
+          if (&I == base_shift_inst)
+            continue;
           if (auto *op = dyn_cast<BinaryOperator>(&I)) {
-            Instruction *lhs = dyn_cast<Instruction>(op->getOperand(0));
-            Instruction *rhs = dyn_cast<Instruction>(op->getOperand(1));
+            Value *lhs = op->getOperand(0);
+            Value *rhs = op->getOperand(1);
+            
             if (op->getOpcode() == Instruction::Mul) {
-              if (workmap.count(lhs) && dyn_cast<ConstantInt>(rhs)) {
-                int mul_const = dyn_cast<ConstantInt>(rhs)->getSExtValue();
-                int new_mul_const_0 = mul_const * std::get<1>(workmap[lhs]);
-                int new_mul_const_1 = mul_const * std::get<2>(workmap[lhs]);
-                workmap[&I] = std::make_tuple(indvar, new_mul_const_0, new_mul_const_1);
+              if (workmap.count(lhs)) {
+                if (auto *CR = dyn_cast<ConstantInt>(rhs)) {
+                  int mul_const = CR->getSExtValue();
+                  int new_mul_const_0 = mul_const * std::get<1>(workmap[lhs]);
+                  int new_mul_const_1 = mul_const * std::get<2>(workmap[lhs]);
+                  workmap[&I] = std::make_tuple(indvar_instr, new_mul_const_0, new_mul_const_1);
+                }
               }
-              else if(workmap.count(rhs) && dyn_cast<ConstantInt>(lhs)) {
-                int mul_const = dyn_cast<ConstantInt>(lhs)->getSExtValue();
-                int new_mul_const_0 = mul_const * std::get<1>(workmap[rhs]);
-                int new_mul_const_1 = mul_const * std::get<2>(workmap[rhs]);
-                workmap[&I] = std::make_tuple(indvar, new_mul_const_0, new_mul_const_1);
+              else if(workmap.count(rhs)) {
+                if (auto *CL = dyn_cast<ConstantInt>(lhs)) {
+                  int mul_const = CL->getSExtValue();
+                  int new_mul_const_0 = mul_const * std::get<1>(workmap[rhs]);
+                  int new_mul_const_1 = mul_const * std::get<2>(workmap[rhs]);
+                  workmap[&I] = std::make_tuple(indvar_instr, new_mul_const_0, new_mul_const_1);
+                }
               }
             }
             else if (op->getOpcode() == Instruction::Add) {
-              if (workmap.count(lhs) && dyn_cast<ConstantInt>(rhs)) {
-                int add_const = dyn_cast<ConstantInt>(rhs)->getSExtValue();
-                int new_add_const = add_const + std::get<1>(workmap[lhs]);
-                workmap[&I] = std::make_tuple(indvar, std::get<1>(workmap[lhs]), new_add_const);
+              if (workmap.count(lhs)) {
+                if (auto *CR = dyn_cast<ConstantInt>(rhs)) {
+                  int add_const = CR->getSExtValue();
+                  int new_add_const = add_const + std::get<2>(workmap[lhs]);
+                  workmap[&I] = std::make_tuple(indvar_instr, std::get<1>(workmap[lhs]), new_add_const);
+                }
               }
-              else if (workmap.count(rhs) && dyn_cast<ConstantInt>(lhs)) {
-                int add_const = dyn_cast<ConstantInt>(lhs)->getSExtValue();
-                int new_add_const = add_const + std::get<1>(workmap[rhs]);
-                workmap[&I] = std::make_tuple(indvar, std::get<1>(workmap[lhs]), new_add_const);
+              else if (workmap.count(rhs)) {
+                if (auto *CL = dyn_cast<ConstantInt>(lhs)) {
+                  int add_const = CL->getSExtValue();
+                  int new_add_const = add_const + std::get<2>(workmap[rhs]);
+                  workmap[&I] = std::make_tuple(indvar_instr, std::get<1>(workmap[lhs]), new_add_const);
+                }
               }
             }
             else if (op->getOpcode() == Instruction::Sub) {
-              if (workmap.count(lhs) && dyn_cast<ConstantInt>(rhs)) {
-                int sub_const = dyn_cast<ConstantInt>(rhs)->getSExtValue();
-                int new_sub_const = std::get<1>(workmap[lhs]) - sub_const;
-                workmap[&I] = std::make_tuple(indvar, std::get<1>(workmap[lhs]), new_sub_const);
+              if (workmap.count(lhs)) {
+                if (auto *CR = dyn_cast<ConstantInt>(rhs)) {
+                  int sub_const = CR->getSExtValue();
+                  int new_sub_const = std::get<2>(workmap[lhs]) - sub_const;
+                  workmap[&I] = std::make_tuple(indvar_instr, std::get<1>(workmap[lhs]), new_sub_const);
+                }
               }
-              else if (workmap.count(rhs) && dyn_cast<ConstantInt>(lhs)) {
-                int sub_const = dyn_cast<ConstantInt>(lhs)->getSExtValue();
-                int new_sub_const = std::get<1>(workmap[rhs]) - sub_const;
-                workmap[&I] = std::make_tuple(indvar, std::get<1>(workmap[lhs]), new_sub_const);
+              else if (workmap.count(rhs)) {
+                if (auto *CL = dyn_cast<ConstantInt>(lhs)) {
+                  int sub_const = CL->getSExtValue();
+                  int new_sub_const = std::get<2>(workmap[rhs]) - sub_const;
+                  workmap[&I] = std::make_tuple(indvar_instr, std::get<1>(workmap[lhs]), new_sub_const);
+                }
               }
             }
           }
-          // if (I.getOpcode() != Instruction::Mul ||
-          //     I.getOpcode() != Instruction::Add ||
-          //     I.getOpcode() != Instruction::Sub )
-          //   continue;
-
-          // if (I.getOpcode() != Instruction::Add ||
-          //     I.getOpcode() != Instruction::Sub ) {
-
-          // }
-
-          // bool ContainIV = false;
-          // Value* MulConst;
-          // for (unsigned i = 0; i < I.getNumOperands(); i++) {
-          //   if (dyn_cast<Instruction> (I.getOperand(i)) == IV) {
-          //     ContainIV = true;
-          //   }
-          // }
-          // if (ContainIV)
-          //   MulList.push_back(std::tuple(&I, ));
         }
       }
+      // llvm::errs() << "\n";
+      // for (auto it = workmap.begin(); it != workmap.end(); ++it) {
+      //   llvm::errs() << "BB: " << dyn_cast<Instruction>(it->first)->getParent()->getName() << 
+      //    "\n\tkey [" << it->first << "]\n\tval [" << std::get<0>(it->second)
+      //   << ", " << std::get<1>(it->second) << ", " << std::get<2>(it->second) <<"]\n";
+      // }
 
       // modify instructions
       bool change = false;
-      for (auto itr = workmap.begin(); itr != workmap.end(); itr++) {
-        Instruction *dr_instr = itr->first;
+      for (auto itr = workmap.begin(); itr != workmap.end(); ++itr) {
+        Instruction *dr_instr = dyn_cast<Instruction>(itr->first);
         auto dr_tuple = itr->second;
+        
+        if(dr_instr == indvar_instr) 
+          continue;
 
-        if (dr_instr->getParent() != L->getHeader()) { // not the base induction variable
-          // add init value in loop pre-header
-          BasicBlock *L_preheader = L->getLoopPreheader();
-          IRBuilder<> builder(L_preheader->getTerminator());
-          Value *new_mul = builder.CreateMul(base_init_inst, 
-            ConstantInt::getSigned(base_init_inst->getType(), std::get<1>(dr_tuple)));
-          Value *new_add = builder.CreateAdd(new_mul, 
-            ConstantInt::getSigned(new_mul->getType(), std::get<2>(dr_tuple)));
-          
-          // add phi node in loop header
-          builder.SetInsertPoint(indvar->getNextNode());
-          PHINode *new_phi = builder.CreatePHI(base_init_inst->getType(), 2);
-          new_phi->addIncoming(new_add, L_preheader);
+        BasicBlock *L_preheader = L->getLoopPreheader();
+        IRBuilder<> builder(TheContext);
+        Value *dr_init_val;
+        if (auto *base_const = dyn_cast<ConstantInt>(base_init_val)) {
+          // add init value in loop header
+          int base_init = base_const->getSExtValue();
+          int dr_init = base_init * std::get<1>(dr_tuple) + std::get<2>(dr_tuple);
+          dr_init_val = ConstantInt::getSigned(base_init_val->getType(), dr_init);
+        } else {
+          // add init value in loop pre-header          
+          builder.SetInsertPoint(L_preheader->getTerminator());
+          dr_init_val = builder.CreateMul(base_init_val, 
+            ConstantInt::getSigned(base_init_val->getType(), std::get<1>(dr_tuple)));
+          dr_init_val = builder.CreateAdd(dr_init_val, 
+            ConstantInt::getSigned(base_init_val->getType(), std::get<2>(dr_tuple)));
+        }
 
-          // add increment in loop body after i += e
-          builder.SetInsertPoint(base_shift_inst->getNextNode());
-          int incr = std::get<1>(dr_tuple) * std::get<2>(indvar_tuple);
-          Value *new_incr = builder.CreateAdd(new_phi, 
-            ConstantInt::getSigned(new_phi->getType(), incr));
-          new_phi->addIncoming(new_incr, base_shift_inst->getParent());
+        // add phi node in loop header
+        builder.SetInsertPoint(indvar_instr->getNextNode());
+        PHINode *new_phi = builder.CreatePHI(indvar->getType(), 2);
+        new_phi->addIncoming(dr_init_val, L_preheader);
 
-          // change previous j=a*i+b to j=new_phi
-          for (auto &U: dr_instr->uses()) {
-            User *user = U.getUser();
-            user->setOperand(U.getOperandNo(), new_phi);
+        // add increment in loop body after i += e
+        builder.SetInsertPoint(base_shift_inst->getNextNode());
+        int incr = std::get<1>(dr_tuple) * base_shift;
+        Value *new_incr = builder.CreateAdd(new_phi, 
+          ConstantInt::getSigned(new_phi->getType(), incr));
+        new_phi->addIncoming(new_incr, base_shift_inst->getParent());        
+
+        // eliminates multiplications 
+        dr_instr->replaceAllUsesWith(new_phi);
+        dr_instr->eraseFromParent();
+        // Instruction *new_phi_inst = dyn_cast<Instruction>(new_phi);
+        llvm::errs() << "new_phi: ";
+        new_phi->print(llvm::errs());
+        llvm::errs() << "\n";
+        phimap[new_phi] = dr_tuple;
+
+        change = true;
+      }
+      
+      // remove the basic induction variable
+      bool deletable = true;
+      for (auto it: indvar->users()) {
+        if (auto *I =  dyn_cast<Instruction>(it)) {
+          // if have uses other than in the loop header and increment
+          if(I->getParent() == L->getHeader())
+            continue;
+          else if(I == base_shift_inst)
+            continue;
+          else {
+            I->print(llvm::errs());
+            llvm::errs() << "\n";
+            deletable = false;
           }
+        }
+      }
+      llvm::errs() << "deletale = " <<deletable << " | phimpa_empty = " <<phimap.empty()<<"\n";
+      if (deletable && !phimap.empty()) {
+        Instruction *BrInst = L->getHeader()->getTerminator(); // assume the terminator is a br
+        Value *lhs = BrInst->getOperand(0);
+        Value *rhs = BrInst->getOperand(1);
+        ICmpInst *Cmp;
+        if (Cmp = dyn_cast<ICmpInst>(lhs)) ;
+        else if (Cmp = dyn_cast<ICmpInst>(rhs)) ;
+        else
+          LLVM_DEBUG(dbgs() << "Not a regular ICmp loop condition.");
+        
+        llvm::errs() << Cmp-> getPredicate() << ", " << Cmp->getOperand(0) 
+        << ", " << Cmp->getOperand(1) << "\n";
+        auto new_indvar = phimap.begin();
+        
+        // dyn_cast<Instruction>(new_indvar->first)->print(llvm::errs());
+        // llvm::errs() <<"\n\t["<<std::get<0>(new_indvar->second)
+        //   << "," << std::get<1>(new_indvar->second) << "," << std::get<2>(new_indvar->second) <<"]\n";
+        int base_bound, new_bound;
+        Instruction *new_icmp;
+        if (auto *base_b_const = dyn_cast<ConstantInt>(Cmp->getOperand(0))) {
+          base_bound = base_b_const->getSExtValue();
+          llvm::errs() << "base_bound: " << base_bound << "\n";
+          new_bound = base_bound * std::get<1>(new_indvar->second) + 
+            std::get<2>(new_indvar->second);
+          Cmp->setOperand(0, ConstantInt::getSigned(new_indvar->first->getType(), new_bound));
+          Cmp->setOperand(1, new_indvar->first);
+        }
+        else if (auto *base_b_const = dyn_cast<ConstantInt>(Cmp->getOperand(1))) {
+          base_bound = base_b_const->getSExtValue();
+          llvm::errs() << "base_bound: " << base_bound << "\n";
+          new_bound = base_bound * std::get<1>(new_indvar->second) + 
+            std::get<2>(new_indvar->second);
+          llvm::errs() << "new_bound: " << new_bound << "\n";
+          Cmp->setOperand(1, ConstantInt::getSigned(new_indvar->first->getType(), new_bound));
+          Cmp->setOperand(0, new_indvar->first);
+          Cmp->print(llvm::errs());
+          llvm::errs() << "\n";
+        }
+        // indvar->removeFromParent();
+        // base_shift_inst->removeFromParent();
+      }
 
-          change = true;
+      // if (deletable) {
+      //   indvar->removeFromParent();
+      //   base_shift_inst->removeFromParent();
+      // }
+
+      // delete all redundant induction variables 
+      if (!phimap.empty()) {
+        phimap[indvar] = indvar_tuple;
+        for (auto it = phimap.begin(); it != phimap.end(); ++it) {
+          dyn_cast<Instruction>(it->first)->print(llvm::errs());
+          llvm::errs() <<"\n\t["<<std::get<0>(it->second) << "," << 
+          std::get<1>(it->second) << "," << std::get<2>(it->second) <<"]\n";
+        }
+
+        for (auto it = phimap.begin(); it != phimap.end(); ++it) {
+          if (auto *I =  dyn_cast<Instruction>(it->first)) {
+            bool remove_indvar = false;
+            I->print(llvm::errs());
+            llvm::errs() << "\n"; 
+            // removable if the only use is an in/decrement
+            if (I->getNumUses() == 1) {
+              for (auto u: I->users()) {
+                if (auto *use_inst = dyn_cast<Instruction>(u)) {
+                  if (use_inst->getOpcode() == Instruction::Add ||
+                      use_inst->getOpcode() == Instruction::Sub)
+                    remove_indvar = true;
+                }
+                break;
+              }
+            }
+            // for (auto u: I->users()) {
+            //   if (auto *use_inst = dyn_cast<Instruction>(u)) {
+            //     if(use_inst->getParent() == L->getHeader())
+            //       continue;
+            //     else if(use_inst == base_shift_inst)
+            //       continue;
+            //     else {
+            //       I->print(llvm::errs());
+            //       llvm::errs() << "\n";
+            //       remove_indvar = false;
+            //     }
+            //   }
+            // }
+            llvm::errs() <<"remove_indvar = "<<remove_indvar<<"\n";
+            if (remove_indvar && I->getNumUses() == 1) {
+              // if have uses other than in the loop header and increment
+              for (auto u: I->users()) {
+                if (auto *use_inst = dyn_cast<Instruction>(u)) {
+                  use_inst->removeFromParent();
+                }
+              }
+              I->removeFromParent();
+            }
+            else
+              continue;
+          }
         }
       }
 
-      // find the induction variable in this compare instruction
-
-      // for (PHINode &PN : L_cond->phis()) {
-        
-      //   llvm::errs() << "phi_node: " << PN.getValueName() << "\n";
-      // }
-      // PHINode *iv = L->getInductionVariable(SE);
-      // // llvm::errs() << "phi node: \n";
-      // llvm::errs() << "phi_node: " << iv->getValueName() << "\n";
-      // // for (unsigned i = 0, e = iv->get)
-
+      llvm::errs() << "for_end!!\n";
+      workmap.clear();
+      phimap.clear();
       return change;
     }
   };
@@ -269,19 +382,9 @@ namespace {
 
 char MyPass::ID = 0;
 
-// // Automatically enable the pass.
-// // http://adriansampson.net/blog/clangpass.html
-// static void registerMyPass(const PassManagerBuilder &,
-//                          legacy::PassManagerBase &PM) {
-//   PM.add(new MyPass());
-// }
-// static RegisterStandardPasses
-//   RegisterMyPass(PassManagerBuilder::EP_EarlyAsPossible,
-//                  registerMyPass);
-
 static RegisterPass<MyPass> X("loopive", "Loop Induction Var Elimination Pass",
                              false /* Only looks at CFG */,
-                             true /* Analysis Pass */);
+                             true /* Transform Pass */);
 
 static RegisterStandardPasses Y(
     PassManagerBuilder::EP_EarlyAsPossible,

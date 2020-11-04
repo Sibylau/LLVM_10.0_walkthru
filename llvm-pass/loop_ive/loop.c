@@ -13,7 +13,7 @@
 
 void loop() {
     int a[8] = {0};
-    for (int i = 0; i < 4; i++) {
+    for (int i = 1; i < 4; i++) {
         int s = 2 * i - 1;
         a[s] = a[s] + 2;
     }
