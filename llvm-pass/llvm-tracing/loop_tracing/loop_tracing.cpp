@@ -17,6 +17,9 @@
 #include <tuple>
 #include <map> 
 
+#define MEM_R_PORT 1
+#define MEM_W_PORT 1
+
 using namespace llvm;
 
 #define DEBUG_TYPE "looptrace"
@@ -28,7 +31,7 @@ namespace {
     MyPass() : LoopPass(ID) {}
 
   private:
-    // LCSSA form makes instruction rnaming easier
+    // glide some necessary information
     void getAnalysisUsage(AnalysisUsage &AU) const override {
       AU.addRequired<LoopInfoWrapperPass>();
       AU.addPreserved<LoopInfoWrapperPass>();
@@ -54,25 +57,46 @@ namespace {
       auto *AC = &getAnalysis<AssumptionCacheTracker>().getAssumptionCache(F);
       auto &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
       auto &SE = getAnalysis<ScalarEvolutionWrapperPass>().getSE();
-      if (!L->isLoopSimplifyForm())
-      //translate to simplify form first
-        LLVM_DEBUG(dbgs() << "Warning: operating on a non-simplified loop. Please \
-        consider simplify first.\n");
+      
 
       // tuple<Instruction/derived_iv, mul_const, shift_const>
-      std::map<Value*, std::tuple<Instruction*, int, int>> workmap;
-      std::map<Value*, std::tuple<Instruction*, int, int>> phimap;
+      // std::map<Value*, std::tuple<Instruction*, int, int>> workmap;
+      // std::map<Value*, std::tuple<Instruction*, int, int>> phimap;
 
-      // in canonical form, ind var is guaranteed to be the first phi node
-      BasicBlock *L_header = L->getHeader();
-      PHINode *indvar;
-      std::tuple<Instruction*, int, int> indvar_tuple;
-      for (PHINode &pn : L_header->phis()) {
-        indvar = &pn;
-        // indvar->print(llvm::errs());
-        break;
-      }
+      // std::vector<Type*> paramTypes = {};
+      // Type *retType = ;
+      // FunctionType *logFuncType = FunctionType::get(retType, paramTypes, false);
+      // FunctionCallee logFunc = F.getParent()->getOrInsertFunction(
+      //   "logout", Type::getVoidTy(Ctx), Type::getInt32Ty(Ctx));
       
+      // Only runs on the innermost loop
+      bool contains_subloop = false;
+      for (auto sub_loop: L->getSubLoops()) {
+        contains_subloop = true;
+      }
+      if (contains_subloop) {
+        errs() << "Not the innermost loop\n";
+        return false;
+      }
+
+      // Count the number of load and store instructions
+      unsigned numLoad = 0;
+      unsigned numStore = 0;
+      for (auto &L_bb: L->getBlocks()) {
+        if (L_bb == L->getHeader() || L_bb == L->getExitBlock())
+          continue;
+        for (auto &I: *L_bb) {
+          if (I.getOpcode() == Instruction::Load)
+            numLoad ++;
+          else if (I.getOpcode() == Instruction::Store)
+            numStore ++;
+        }
+      }
+      errs() << "numLoad = " << numLoad <<" , numStore = " << numStore << "\n";
+
+      // 
+      
+      return false;
     }
   };
 }
