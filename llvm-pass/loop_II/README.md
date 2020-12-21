@@ -2,16 +2,17 @@
 
 An LLVM pass doing loop resource minimum II (ResMII) and recurrence minimum II (RecMII) estimation. 
 
-## Build
+## Build and Run
+### Build
 `mkdir build`  
 `cd build`  
 `cmake ..`  
 `make`  
-
-## LLVM Optimzation Pipeline 
-1. `clang -emit-llvm -S -O0 -Xclang -disable-O0-optnone benchmark.c -o bm.ll` 
-2. `opt -S -O0 -gvn -mem2reg -indvars bm.ll -o bm-reg.ll` applies global value numbering first to combine redundant array index computations, and then eliminates unnecessary memory accesses.
-3. ` opt -S -O0 -load build/loop_tracing/libMyPass.so -loopII bm-reg.ll -o bm-tc.ll`, in which `loopII` runs our analysis.
+### LLVM Optimzation Pipeline 
+1. `cd benchmarks`
+2. `clang -emit-llvm -S -O0 -Xclang -disable-O0-optnone test.c -o test.ll` 
+3. `opt -S -O0 -gvn -mem2reg -indvars test.ll -o test-reg.ll` applies global value numbering first to combine redundant array index computations, and then eliminates unnecessary memory accesses.
+4. ` opt -S -O0 -load ../build/loop_II/libMyPass.so -loopII test-reg.ll -o test-o.ll`, in which `loopII` runs our analysis.
 
 
 ## Code API references:
