@@ -1,11 +1,12 @@
-# Loop Tracing and Analysis
+# Loop ResMII and RecMII Estimation
 
-An LLVM pass doing loop instruction tracing and analysis. 
+An LLVM pass doing loop resource minimum II (ResMII) and recurrence minimum II (RecMII) estimation. 
 
-## Loop Induction Variable Elimination
-Loop induction variable elimination removes basic induciton variable whose only uses are in loop test conditions.  
-Based on strength reduction, a loop induction variable elimination optimization can be performed. For a basic induction variable i whose only uses are 1) the test condition i < u; 2) the definition of i += c. Rewrite loop conditions using the derived loop variable. Eliminate the base loop variable if not used after the loop. In this implementationn, we only eliminates explicit affine functions of the base induction variable. 
- 
+## Build
+`mkdir build`  
+`cd build`  
+`cmake ..`  
+`make`  
 
 ## LLVM Optimzation Pipeline 
 1. `clang -emit-llvm -S -O0 -Xclang -disable-O0-optnone benchmark.c -o bm.ll` 
