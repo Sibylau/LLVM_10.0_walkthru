@@ -29,6 +29,7 @@ loop_tracing/CMakeFiles/MyPass.dir/loop_tracing.cpp.o
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/ADT/PointerUnion.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/ADT/STLExtras.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/ADT/SetVector.h
+ /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/ADT/SmallBitVector.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/ADT/SmallPtrSet.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/ADT/SmallString.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/ADT/SmallVector.h
@@ -49,10 +50,12 @@ loop_tracing/CMakeFiles/MyPass.dir/loop_tracing.cpp.o
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/ADT/iterator_range.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/ADT/simple_ilist.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/Analysis/AssumptionCache.h
+ /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/Analysis/DependenceAnalysis.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/Analysis/IVDescriptors.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/Analysis/LoopInfo.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/Analysis/LoopPass.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/Analysis/ScalarEvolution.h
+ /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/Analysis/ScalarEvolutionExpressions.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/Analysis/TargetTransformInfo.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/Config/abi-breaking.h
  /work/shared/users/phd/jl3952/installs/LLVM/include/llvm/Config/llvm-config.h

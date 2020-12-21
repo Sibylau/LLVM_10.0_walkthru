@@ -1,7 +1,6 @@
 
 int main()
 {
-  unsigned t, i, j;
   int A[20][20][20];
   int B[20][20][20];
   for (unsigned i = 1; i < 20-1; i++) {
@@ -13,6 +12,6 @@ int main()
                 + A[i][j][k];
         }
     }
-}
+  }
   return 0;
 }
