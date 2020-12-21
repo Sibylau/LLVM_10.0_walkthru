@@ -15,5 +15,5 @@ An LLVM pass doing loop resource minimum II (ResMII) and recurrence minimum II (
 
 
 ## Code API references:
-1. https://llvm.org/doxygen/LoopUnrollPass_8cpp_source.html  
+1. https://llvm.org/doxygen/DependenceAnalysis_8cpp_source.html#l00591
 
