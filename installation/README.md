@@ -11,7 +11,7 @@
  - ``$cd llvm-project``  
  ``$mkdir build``  
  ``$cd build``  
- - ``$cmake -DLLVM_ENABLE_PROJECTS="clang" -DCMAKE_INSTALL_PREFIX=directory -DCMAKE_CXX_COMPILER=/usr/local/bin/g++ -DCMAKE_C_COMPILER=/usr/local/bin/gcc ../llvm``
+ - ``$cmake -DLLVM_ENABLE_PROJECTS="clang" -DCMAKE_INSTALL_PREFIX=directory -DCMAKE_CXX_COMPILER=/usr/local/bin/g++ -DCMAKE_C_COMPILER=/usr/local/bin/gcc -DCMAKE_CXX_STANDARD=14 ../llvm``
  - ``$cmake --build . -jN``
  - ``$cmake -DCMAKE_INSTALL_PREFIX=/tmp/llvm -P cmake_install.cmake``
  - add llvm bin to PATH: ``$export PATH=$PATH:/llvm/installation/path/bin/``
